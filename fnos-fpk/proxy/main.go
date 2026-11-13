@@ -1,8 +1,14 @@
 // fnOS unified-gateway reverse proxy for magpie.
 // Listens on a Unix socket, strips the gateway prefix, forwards to magpie's
 // loopback HTTP page, injects the magpie web cookie (so the page needs no key
-// in the URL), re-adds the prefix to redirects, and injects a tiny fetch shim
-// because magpie's UI calls absolute /api/... paths.
+// in the URL), re-adds the prefix to redirects, and injects a small shim
+// because magpie's UI calls absolute /api/... paths (fetch, img src, XHR).
+//
+// It also repairs the Origin/Host pair: fnOS's gateway reaches the app with
+// the Host port stripped and without Sec-Fetch-* headers, which makes
+// magpie's same-origin guard (webOwnPage) refuse unsafe methods such as POST.
+// The socket is only reachable by the fnOS gateway (root), so requests here
+// have already passed the NAS session check; normalising them is safe.
 package main
 
 import (
@@ -36,9 +42,16 @@ func injectCookie(h http.Header, name, val string) {
 func shim(base string) string {
 	return `<script>(function(){var B="` + base + `";` +
 		`function fix(u){try{if(typeof u==="string"&&u.charAt(0)==="/"&&u.charAt(1)!=="/"&&u.indexOf(B)!==0){return B+u.slice(1);}}catch(e){}return u;}` +
+		// fetch / EventSource / WebSocket
 		`var of=window.fetch;if(of){window.fetch=function(i,o){return of.call(this,fix(i),o);};}` +
 		`var oe=window.EventSource;if(oe){var E=function(u,c){return c!==undefined?new oe(fix(u),c):new oe(fix(u));};E.prototype=oe.prototype;window.EventSource=E;}` +
 		`var ow=window.WebSocket;if(ow){var W=function(u,p){return p!==undefined?new ow(fix(u),p):new ow(fix(u));};W.prototype=ow.prototype;window.WebSocket=W;}` +
+		// <img src="/api/icons/..."> (property assignment, e.g. img.src = ...)
+		`try{var d=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,"src");if(d&&d.set){Object.defineProperty(HTMLImageElement.prototype,"src",{configurable:true,enumerable:d.enumerable,get:d.get,set:function(v){return d.set.call(this,fix(v));}});}}catch(e){}` +
+		// setAttribute("src", "/api/...")
+		`try{var sa=Element.prototype.setAttribute;Element.prototype.setAttribute=function(n,v){try{if(String(n).toLowerCase()==="src"){v=fix(v);}}catch(e){}return sa.call(this,n,v);};}catch(e){}` +
+		// XMLHttpRequest.open
+		`try{var xo=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(){var a=Array.prototype.slice.call(arguments);try{if(a.length>1){a[1]=fix(a[1]);}}catch(e){}return xo.apply(this,a);};}catch(e){}` +
 		`})();</script>`
 }
 
@@ -70,6 +83,19 @@ func main() {
 				r.URL.Path = strings.TrimPrefix(r.URL.Path, *prefix)
 			}
 			r.URL.RawPath = ""
+		}
+		// fnOS's nginx sets Host $host (no port) and the gateway drops
+		// Sec-Fetch-*; magpie's /api same-origin guard then refuses POST.
+		// Rebuild a consistent Origin/Host pair from the browser's Origin.
+		if o := r.Header.Get("Origin"); o != "" && o != "null" {
+			if u, err := url.Parse(o); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
+				r.Host = u.Host
+				r.Header.Set("X-Forwarded-Proto", u.Scheme)
+			}
+		}
+		if r.Header.Get("Sec-Fetch-Site") == "" {
+			// the socket is only reachable through the authenticated gateway
+			r.Header.Set("Sec-Fetch-Site", "same-origin")
 		}
 		// let Go's transport negotiate/decompress gzip so we can inject HTML
 		r.Header.Del("Accept-Encoding")
