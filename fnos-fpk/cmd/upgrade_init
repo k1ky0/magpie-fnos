@@ -1,0 +1,3 @@
+#!/bin/bash
+[ -x "${TRIM_APPDEST}/cmd/main" ] && "${TRIM_APPDEST}/cmd/main" stop 2>/dev/null
+exit 0

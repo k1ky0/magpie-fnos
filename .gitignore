@@ -9,3 +9,9 @@
 /internal/update/launcher-*.com
 /internal/gui/assets.zip
 /.overlay/
+
+# fnOS packaging: large/derived artifacts (built by fnos-fpk/build.sh)
+fnos-fpk/app/bin/magpie
+fnos-fpk/app/bin/magpie-proxy
+fnos-fpk/*.fpk
+*.fpk

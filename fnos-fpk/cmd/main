@@ -1,0 +1,124 @@
+#!/bin/bash
+# magpie lifecycle: start | stop | status
+# Runs magpie web + gateway on 127.0.0.1, and a proxy on target/app.sock that
+# serves the UI under the fnOS unified gateway (/app/magpie).
+APP_DIR="${TRIM_APPDEST}"
+VAR_DIR="${TRIM_PKGVAR}"
+BIN="${APP_DIR}/bin/magpie"
+PROXY="${APP_DIR}/bin/magpie-proxy"
+SOCKET="${APP_DIR}/app.sock"
+CONF="${TRIM_PKGETC}/magpie.conf"
+MPID_FILE="${VAR_DIR}/magpie.pid"
+XPID_FILE="${VAR_DIR}/proxy.pid"
+LOG_FILE="${VAR_DIR}/magpie.log"
+
+WEB_ADDR="127.0.0.1:13430"
+GW_ADDR="127.0.0.1:3425"
+PREFIX="/app/magpie"
+[ -r "$CONF" ] && . "$CONF"
+[ -n "${wizard_web_key:-}" ] && WEB_KEY="${wizard_web_key}"
+[ -n "${wizard_gw_port:-}" ] && GW_ADDR="127.0.0.1:${wizard_gw_port}"
+WEB_ADDR="${WEB_ADDR:-127.0.0.1:13430}"
+GW_ADDR="${GW_ADDR:-127.0.0.1:3425}"
+PREFIX="${PREFIX:-/app/magpie}"
+WEB_PORT="${WEB_ADDR##*:}"
+COOKIE_NAME="magpie_web_${WEB_PORT}"
+
+log_msg() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE" 2>/dev/null; }
+valid_key() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9._~-]{16,}$'; }
+check_pid() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null; }
+read_pid() { [ -r "$1" ] && head -n1 "$1" | tr -d '[:space:]'; }
+have_pgrep() { command -v pgrep >/dev/null 2>&1; }
+proc_alive() { have_pgrep && [ -n "$1" ] && pgrep -f -- "$1" >/dev/null 2>&1; }
+
+prepare_env() {
+    mkdir -p "$VAR_DIR/config" "$VAR_DIR/cache" "$VAR_DIR/data" "$VAR_DIR/state" "$VAR_DIR/home" 2>/dev/null
+    [ -x "$BIN" ] || chmod 755 "$BIN" 2>/dev/null
+    [ -x "$PROXY" ] || chmod 755 "$PROXY" 2>/dev/null
+}
+apply_env() {
+    export HOME="$VAR_DIR/home"
+    export XDG_CONFIG_HOME="$VAR_DIR/config"
+    export XDG_CACHE_HOME="$VAR_DIR/cache"
+    export XDG_DATA_HOME="$VAR_DIR/data"
+    export XDG_STATE_HOME="$VAR_DIR/state"
+    export MAGPIE_ADDR="$GW_ADDR"
+    export MAGPIE_WEB_KEY="$WEB_KEY"
+}
+
+magpie_alive() { check_pid "$(read_pid "$MPID_FILE")" || proc_alive "$BIN web"; }
+proxy_alive()  { check_pid "$(read_pid "$XPID_FILE")"  || proc_alive "$PROXY -socket $SOCKET"; }
+
+start_magpie() {
+    if magpie_alive; then return 0; fi
+    apply_env
+    # First run: default to MANUAL updates (no silent background download/restart).
+    # The user can still turn auto-update on in Settings; their choice is kept.
+    if [ ! -f "$VAR_DIR/config/magpie/settings.json" ]; then
+        "$BIN" update auto off >/dev/null 2>&1 || true
+    fi
+    log_msg "Starting magpie web on ${WEB_ADDR} (gateway ${GW_ADDR})"
+    nohup "$BIN" web --addr "$WEB_ADDR" --no-open >> "$LOG_FILE" 2>&1 &
+    local pid=$!; echo "$pid" > "$MPID_FILE"
+    local i=0
+    while [ $i -lt 15 ]; do
+        if ! check_pid "$pid"; then log_msg "magpie exited early (port busy?)"; rm -f "$MPID_FILE"; return 1; fi
+        if MAGPIE_ADDR="$GW_ADDR" "$BIN" healthcheck >/dev/null 2>&1; then log_msg "magpie started pid=$pid"; return 0; fi
+        sleep 1; i=$((i+1))
+    done
+    check_pid "$pid" && { log_msg "magpie started pid=$pid (health not ready)"; return 0; } || { rm -f "$MPID_FILE"; return 1; }
+}
+
+start_proxy() {
+    if proxy_alive; then return 0; fi
+    rm -f "$SOCKET"
+    log_msg "Starting gateway proxy ${SOCKET} -> http://${WEB_ADDR} (strip ${PREFIX})"
+    nohup "$PROXY" -socket "$SOCKET" -target "http://${WEB_ADDR}" -prefix "$PREFIX" \
+        -cookie-name "$COOKIE_NAME" -cookie-value "$WEB_KEY" >> "$LOG_FILE" 2>&1 &
+    local pid=$!; echo "$pid" > "$XPID_FILE"
+    local i=0
+    while [ $i -lt 10 ]; do
+        if ! check_pid "$pid"; then log_msg "proxy exited early"; rm -f "$XPID_FILE"; return 1; fi
+        [ -S "$SOCKET" ] && { log_msg "proxy started pid=$pid socket=$SOCKET"; return 0; }
+        sleep 1; i=$((i+1))
+    done
+    return 1
+}
+
+start_all() {
+    prepare_env
+    if ! valid_key "$WEB_KEY"; then log_msg "invalid WEB_KEY (need >=16 of A-Za-z0-9._~-)"; return 1; fi
+    start_magpie || return 1
+    start_proxy || return 1
+    return 0
+}
+
+stop_all() {
+    for f in "$XPID_FILE" "$MPID_FILE"; do
+        pid=$(read_pid "$f")
+        if check_pid "$pid"; then
+            log_msg "Stopping pid=$pid ($f)"
+            kill -TERM "$pid" 2>/dev/null
+            local c=0; while check_pid "$pid" && [ $c -lt 10 ]; do sleep 1; c=$((c+1)); done
+            check_pid "$pid" && kill -KILL "$pid" 2>/dev/null
+        fi
+        rm -f "$f"
+    done
+    # fallback: catch a process that self-restarted (its PID differs from the pidfile)
+    if have_pgrep && command -v pkill >/dev/null 2>&1; then
+        pkill -TERM -f -- "$BIN web" 2>/dev/null
+        pkill -TERM -f -- "$PROXY .*$SOCKET" 2>/dev/null
+        sleep 1
+        pkill -KILL -f -- "$BIN web" 2>/dev/null
+        pkill -KILL -f -- "$PROXY .*$SOCKET" 2>/dev/null
+    fi
+    rm -f "$SOCKET"
+    return 0
+}
+
+case "$1" in
+    start)  start_all ;;
+    stop)   stop_all ;;
+    status) if magpie_alive && proxy_alive; then exit 0; else exit 3; fi ;;
+    *)      exit 1 ;;
+esac

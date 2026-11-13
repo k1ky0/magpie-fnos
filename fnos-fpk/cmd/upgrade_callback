@@ -1,0 +1,10 @@
+#!/bin/bash
+APPDEST="${TRIM_APPDEST}"; VAR="${TRIM_PKGVAR}"
+mkdir -p "$VAR/config" "$VAR/cache" "$VAR/data" "$VAR/state" "$VAR/home" 2>/dev/null
+[ -f "$APPDEST/bin/magpie" ] && chmod 755 "$APPDEST/bin/magpie" 2>/dev/null
+[ -f "$APPDEST/bin/magpie-proxy" ] && chmod 755 "$APPDEST/bin/magpie-proxy" 2>/dev/null
+[ -f "$APPDEST/cmd/main" ] && chmod 755 "$APPDEST/cmd/main" 2>/dev/null
+if [ "$(id -u)" = "0" ] && [ -n "$TRIM_RUN_USERNAME" ]; then
+    chown -R "${TRIM_RUN_USERNAME}:${TRIM_RUN_GROUPNAME}" "$VAR" "${TRIM_PKGHOME}" 2>/dev/null
+fi
+exit 0

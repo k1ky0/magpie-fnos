@@ -1,3 +1,14 @@
+> ## 🍴 本仓库是 fork（fnOS 适配版）
+>
+> 本仓库 fork 自 magpie 主仓库 **yetone/magpie** —— <https://github.com/yetone/magpie>（作者 yetone，MIT License）。
+> 本 fork **仅用于把 magpie 适配、打包到飞牛 fnOS NAS**，基于 **DSH（DeepSeek Harness）** 的工程化能力完成跨平台适配与验证；magpie 主体功能与版权归上游作者所有。
+>
+> - 上游项目 / Upstream: <https://github.com/yetone/magpie>
+> - 本 fork 新增内容：**fnOS `.fpk` 应用打包 + 统一网关（同源 iframe）集成**，全部位于 [`fnos-fpk/`](fnos-fpk/README.md)。
+> - 安装、构建、架构、端口/密钥与已知限制：见 [`fnos-fpk/README.md`](fnos-fpk/README.md)。
+> - fnOS 版要点：桌面 `type=iframe` 内打开；走飞牛统一网关，**局域网 + fnConnect 远程均可访问**；网关默认 `127.0.0.1`；Web 访问密钥安装时由用户填写（≥16 位，`A-Za-z0-9._~-`）。
+>
+> ---
 <div align="center">
 
 <a href="https://usemagpie.ai"><img src="site/public/img/icon-256.png" width="112" alt="magpie"></a>
