@@ -9,6 +9,19 @@
 > - fnOS 版要点：桌面 `type=iframe` 内打开；走飞牛统一网关，**局域网 + fnConnect 远程均可访问**；网关默认 `127.0.0.1`；Web 访问密钥安装时由用户填写（≥16 位，`A-Za-z0-9._~-`）。
 >
 > ---
+## fnOS（飞牛 NAS）快速安装
+
+本仓库是 [magpie](https://github.com/yetone/magpie) 的 **fnOS 适配 fork**，所有新增内容都在 [`fnos-fpk/`](fnos-fpk/README.md)。
+
+1. 构建/获取安装包：`cd fnos-fpk && ./build.sh`（需 [fnpack](https://developer.fnnas.com/docs/cli/fnpack/)），产物为 `fnos-fpk/magpie-*.fpk`。
+2. 飞牛「应用中心 → 手动安装」选择该 `.fpk`。
+3. 安装向导填写 **Web 访问密钥**（≥16 位，仅 `A-Za-z0-9._~-`）与 **网关端口**（默认 `3425`，仅 `127.0.0.1`）。
+4. 装好后桌面出现 **Magpie**，点击即在桌面窗口内以 **iframe** 打开；**局域网与 fnConnect 远程**均可访问。
+
+> 相对上游的改动：仅新增 `fnos-fpk/`（fpk 打包、生命周期脚本、端口/密钥向导、飞牛统一网关同源代理 `magpie-proxy`）及本 README 说明；magpie 主体功能与代码不变。
+
+---
+
 <div align="center">
 
 <a href="https://usemagpie.ai"><img src="site/public/img/icon-256.png" width="112" alt="magpie"></a>
