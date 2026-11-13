@@ -1,5 +1,7 @@
 # Magpie · 飞牛 fnOS FPK 打包说明
 
+> ⚠️ 个人自用 fork，非 magpie 官方发行版，仅供自用与参考。
+
 上游仓库：https://github.com/yetone/magpie （本工程 fork/打包自 v0.1.3993，MIT License）
 用途：把 magpie 做成飞牛 fnOS 应用包（.fpk）。安装后桌面出现 **Magpie** 图标，点击**在 fnOS 桌面窗口内以 iframe 方式**打开 magpie 的 Web UI；由于走飞牛**统一网关（同源）**，**局域网和 fnConnect 远程都能打开**。
 

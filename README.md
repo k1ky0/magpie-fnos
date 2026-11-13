@@ -1,4 +1,6 @@
 > ## 🍴 本仓库是 fork（fnOS 适配版）
+
+> **⚠️ 个人自用声明：本仓库为本人自用的 fork，非 magpie 官方发行版，仅供自用与参考，不保证维护、兼容或安全问题修复。**
 >
 > 本仓库 fork 自 magpie 主仓库 **yetone/magpie** —— <https://github.com/yetone/magpie>（作者 yetone，MIT License）。
 > 本 fork **仅用于把 magpie 适配、打包到飞牛 fnOS NAS**，基于 **DSH（DeepSeek Harness）** 的工程化能力完成跨平台适配与验证；magpie 主体功能与版权归上游作者所有。
