@@ -1,26 +1,38 @@
 #!/bin/bash
 # magpie lifecycle: start | stop | status
-# Runs magpie web + gateway on 127.0.0.1, and a proxy on target/app.sock that
-# serves the UI under the fnOS unified gateway (/app/magpie).
+# Runs magpie web + gateway, and a proxy on target/app.sock that serves the UI
+# under the fnOS unified gateway (/app/magpie).
+# The API gateway may be bound to 127.0.0.1 (this machine only) or 0.0.0.0
+# (LAN + Docker containers). On the network it requires a gateway key.
 APP_DIR="${TRIM_APPDEST}"
 VAR_DIR="${TRIM_PKGVAR}"
 BIN="${APP_DIR}/bin/magpie"
 PROXY="${APP_DIR}/bin/magpie-proxy"
 SOCKET="${APP_DIR}/app.sock"
 CONF="${TRIM_PKGETC}/magpie.conf"
+GWKEY_FILE="${TRIM_PKGETC}/gateway-key.txt"
 MPID_FILE="${VAR_DIR}/magpie.pid"
 XPID_FILE="${VAR_DIR}/proxy.pid"
 LOG_FILE="${VAR_DIR}/magpie.log"
 
 WEB_ADDR="127.0.0.1:13430"
-GW_ADDR="127.0.0.1:3425"
+GW_HOST="127.0.0.1"
+GW_PORT="3425"
 PREFIX="/app/magpie"
 [ -r "$CONF" ] && . "$CONF"
-[ -n "${wizard_web_key:-}" ] && WEB_KEY="${wizard_web_key}"
-[ -n "${wizard_gw_port:-}" ] && GW_ADDR="127.0.0.1:${wizard_gw_port}"
+# wizard values (install/config) override the persisted conf
+if [ -n "${wizard_gw_lan:-}" ]; then
+    case "$wizard_gw_lan" in
+        lan|on|true|1|yes) GW_HOST="0.0.0.0" ;;
+        local|off|false|0|no) GW_HOST="127.0.0.1" ;;
+    esac
+fi
+[ -n "${wizard_gw_port:-}" ] && GW_PORT="${wizard_gw_port}"
 WEB_ADDR="${WEB_ADDR:-127.0.0.1:13430}"
-GW_ADDR="${GW_ADDR:-127.0.0.1:3425}"
+GW_HOST="${GW_HOST:-127.0.0.1}"
+GW_PORT="${GW_PORT:-3425}"
 PREFIX="${PREFIX:-/app/magpie}"
+GW_ADDR="${GW_HOST}:${GW_PORT}"
 WEB_PORT="${WEB_ADDR##*:}"
 COOKIE_NAME="magpie_web_${WEB_PORT}"
 
@@ -30,6 +42,13 @@ check_pid() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null; }
 read_pid() { [ -r "$1" ] && head -n1 "$1" | tr -d '[:space:]'; }
 have_pgrep() { command -v pgrep >/dev/null 2>&1; }
 proc_alive() { have_pgrep && [ -n "$1" ] && pgrep -f -- "$1" >/dev/null 2>&1; }
+
+detect_lan_ip() {
+    local ip
+    ip=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
+    [ -z "$ip" ] && ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    printf '%s' "$ip"
+}
 
 prepare_env() {
     mkdir -p "$VAR_DIR/config" "$VAR_DIR/cache" "$VAR_DIR/data" "$VAR_DIR/state" "$VAR_DIR/home" 2>/dev/null
@@ -44,16 +63,38 @@ apply_env() {
     export XDG_STATE_HOME="$VAR_DIR/state"
     export MAGPIE_ADDR="$GW_ADDR"
     export MAGPIE_WEB_KEY="$WEB_KEY"
+    if [ "$GW_HOST" != "127.0.0.1" ] && [ "$GW_HOST" != "localhost" ]; then
+        local ip; ip=$(detect_lan_ip)
+        [ -n "$ip" ] && export MAGPIE_PUBLIC_URL="http://${ip}:${GW_PORT}"
+    fi
 }
 
 magpie_alive() { check_pid "$(read_pid "$MPID_FILE")" || proc_alive "$BIN web"; }
 proxy_alive()  { check_pid "$(read_pid "$XPID_FILE")"  || proc_alive "$PROXY -socket $SOCKET"; }
 
+# When the gateway is on the network, make sure at least one gateway key
+# exists, so Docker containers / LAN agents can authenticate (else 401).
+ensure_gateway_key() {
+    [ "$GW_HOST" = "127.0.0.1" ] && return 0
+    local cnt key
+    cnt=$("$BIN" gateway-key list 2>/dev/null | tail -n +2 | grep -c .)
+    if [ "${cnt:-0}" -eq 0 ]; then
+        key=$("$BIN" gateway-key add "fnOS-LAN" 2>/dev/null | tail -n1 | tr -d '[:space:]')
+        case "$key" in
+            sk-magpie-*)
+                printf '%s\n' "$key" > "$GWKEY_FILE" 2>/dev/null
+                chmod 600 "$GWKEY_FILE" 2>/dev/null
+                log_msg "created LAN gateway key (saved to gateway-key.txt; also visible in Gateway page)" ;;
+            *) log_msg "could not create LAN gateway key automatically; create one in Gateway page" ;;
+        esac
+    fi
+    return 0
+}
+
 start_magpie() {
     if magpie_alive; then return 0; fi
     apply_env
     # First run: default to MANUAL updates (no silent background download/restart).
-    # The user can still turn auto-update on in Settings; their choice is kept.
     if [ ! -f "$VAR_DIR/config/magpie/settings.json" ]; then
         "$BIN" update auto off >/dev/null 2>&1 || true
     fi
@@ -89,6 +130,7 @@ start_all() {
     prepare_env
     if ! valid_key "$WEB_KEY"; then log_msg "invalid WEB_KEY (need >=16 of A-Za-z0-9._~-)"; return 1; fi
     start_magpie || return 1
+    ensure_gateway_key
     start_proxy || return 1
     return 0
 }

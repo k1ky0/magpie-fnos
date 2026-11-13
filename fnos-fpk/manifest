@@ -1,5 +1,5 @@
 appname               = magpie
-version               = 0.1.3999
+version               = 0.1.3999-2
 display_name          = Magpie
 desc                  = Every agent's model, one place. Local AI gateway with a web UI, opened in the fnOS desktop and reachable via fnConnect/LAN.
 platform              = x86
@@ -11,4 +11,4 @@ desktop_uidir         = ui
 desktop_applaunchname = magpie.main
 ctl_stop              = true
 checkport             = false
-changelog             = 0.1.3999: fix POST /api 403 under fnOS gateway (Origin/Host + Sec-Fetch-Site), and rewrite img/XHR absolute /api paths; gateway on 127.0.0.1; user-set web key.
+changelog             = 0.1.3999-2: 网关可对局域网/Docker 容器开放（0.0.0.0，自动生成网关密钥）；保留 0.1.3999 的 POST /api 403 与图标路径修复。

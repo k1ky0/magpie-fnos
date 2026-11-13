@@ -65,6 +65,27 @@ FNPACK=/path/to/fnpack ./build.sh   # 若缺网关代理二进制且本机有 Go
 - 仅 `x86`（linux-amd64）。ARM 需替换两个二进制并把 `manifest` 的 `platform` 改为 `arm`。
 - 统一网关由飞牛按登录会话鉴权；`allUsers=false` 表示仅管理员桌面可见。
 
+
+## 局域网 / Docker 容器使用网关
+
+安装向导「网关访问范围」选择 **局域网 + Docker 容器（0.0.0.0）** 后，magpie 网关会监听 `0.0.0.0:<网关端口>`（默认 3425），本机仍可用 `127.0.0.1:3425`。因网关在网络上，**非本机来源必须带网关密钥**（否则 401）。
+
+- 首次启动会自动生成一个名为 `fnOS-LAN` 的网关密钥，保存在 `${TRIM_PKGETC}/gateway-key.txt`（0600），也可在 **Magpie 网页 → Gateway → Gateway keys** 查看/新建。
+- Docker 容器内配置（默认网桥用 `172.17.0.1`，或直接用 NAS 局域网 IP）：
+
+```sh
+# OpenAI 兼容
+export OPENAI_BASE_URL=http://172.17.0.1:3425/v1     # 或 http://<NAS局域网IP>:3425/v1
+export OPENAI_API_KEY=sk-magpie-key-xxxxxxxx
+
+# Anthropic 兼容
+export ANTHROPIC_BASE_URL=http://172.17.0.1:3425
+export ANTHROPIC_API_KEY=sk-magpie-key-xxxxxxxx
+```
+
+> 自定义 docker 网络的“宿主机地址”不是 172.17.0.1：用容器内 `ip route | grep default` 看到的网关地址，或直接填 NAS 的局域网 IP。`host.docker.internal` 在 Linux 上需 `--add-host=host.docker.internal:host-gateway`。
+- 安全：网关密钥用于鉴权，请勿把该端口暴露到公网；不需要容器/局域网访问时，可在「应用设置」里把网关访问范围改回「仅本机 127.0.0.1」。
+
 ## 关于 magpie 自带更新（`magpie update`）
 - **能用**：magpie 只在 `/usr、/bin、/sbin、/opt`（dpkg/pacman/rpm/homebrew/nix）下才认为“被包管理器托管”。本包二进制位于 `/vol1/@appcenter/magpie/...`，所以它把自己当普通二进制。实测 `magpie update` 可把 **0.1.3999 原地升级到 0.1.3985**，且升级后的 0.1.3985 与本包的同源代理/垫片仍兼容（`/app/magpie/` 200、资产/API 200）。
 - **fpk 场景的注意点**：

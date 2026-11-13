@@ -1,11 +1,10 @@
 #!/bin/bash
-# after files placed: validate + persist the user's web key & gateway port, fix perms
-APPDEST="${TRIM_APPDEST}"; VAR="${TRIM_PKGVAR}"
-mkdir -p "$VAR/config" "$VAR/cache" "$VAR/data" "$VAR/state" "$VAR/home" 2>/dev/null
-[ -f "$APPDEST/bin/magpie" ] && chmod 755 "$APPDEST/bin/magpie" 2>/dev/null
-[ -f "$APPDEST/bin/magpie-proxy" ] && chmod 755 "$APPDEST/bin/magpie-proxy" 2>/dev/null
-[ -f "$APPDEST/cmd/main" ] && chmod 755 "$APPDEST/cmd/main" 2>/dev/null
-
+WIZ_LAN="${wizard_gw_lan:-}"
+case "$WIZ_LAN" in
+    lan|on|true|1|yes) GH="0.0.0.0" ;;
+    local|off|false|0|no|"") GH="127.0.0.1" ;;
+    *) GH="127.0.0.1" ;;
+esac
 wp="${wizard_web_key:-}"; wg="${wizard_gw_port:-3425}"
 case "$wg" in ""|*[!0-9]*) wg=3425;; esac
 { [ "$wg" -ge 1 ] && [ "$wg" -le 65535 ]; } 2>/dev/null || wg=3425
@@ -19,12 +18,18 @@ mkdir -p "$TRIM_PKGETC" 2>/dev/null
 old_umask=$(umask); umask 077
 {
     printf "WEB_KEY='%s'\n" "$wp"
-    printf 'GW_ADDR=127.0.0.1:%s\n' "$wg"
+    printf 'GW_HOST=%s\n' "$GH"
+    printf 'GW_PORT=%s\n' "$wg"
     printf 'WEB_ADDR=127.0.0.1:13430\n'
     printf 'PREFIX=/app/magpie\n'
 } > "$TRIM_PKGETC/magpie.conf"
 umask "$old_umask"
 chmod 600 "$TRIM_PKGETC/magpie.conf" 2>/dev/null
+APPDEST="${TRIM_APPDEST}"; VAR="${TRIM_PKGVAR}"
+mkdir -p "$VAR/config" "$VAR/cache" "$VAR/data" "$VAR/state" "$VAR/home" 2>/dev/null
+[ -f "$APPDEST/bin/magpie" ] && chmod 755 "$APPDEST/bin/magpie" 2>/dev/null
+[ -f "$APPDEST/bin/magpie-proxy" ] && chmod 755 "$APPDEST/bin/magpie-proxy" 2>/dev/null
+[ -f "$APPDEST/cmd/main" ] && chmod 755 "$APPDEST/cmd/main" 2>/dev/null
 if [ "$(id -u)" = "0" ] && [ -n "$TRIM_RUN_USERNAME" ]; then
     chown -R "${TRIM_RUN_USERNAME}:${TRIM_RUN_GROUPNAME}" "$VAR" "${TRIM_PKGHOME}" "${TRIM_PKGETC}/magpie.conf" 2>/dev/null
 fi
