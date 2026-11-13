@@ -2,7 +2,7 @@
 # Build the magpie fnOS .fpk. Requires fnpack (https://developer.fnnas.com/docs/cli/fnpack/).
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd); cd "$HERE"
-VERSION=0.1.3963
+VERSION=0.1.3993
 BIN_URL="https://github.com/yetone/magpie-releases/releases/download/v${VERSION}/magpie-cli-linux-amd64"
 mkdir -p app/bin
 if [ ! -s app/bin/magpie ]; then echo "==> downloading magpie ${VERSION}"; curl -fsSL -o app/bin/magpie "$BIN_URL"; fi
