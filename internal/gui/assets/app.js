@@ -515,7 +515,7 @@ function renderAgents() {
     const wide = (f) => f.label === "model" || f.label === "large" || f.label === "executor" || f.label === "planner";
     // a field with nothing to pick and nothing set isn't drawn (#1499)
     const none = (f) => (f.key === "effort" || toggled(f) || f.label === "subagents" || f.label === "gateway" || f.label === SUB_EFFORT || f.label === SUB_MODEL || f.label === AUTO_MODE || f.label === MEMORIES || f.label === COMPACT_MODEL || f.label === "sign-in" || f.key === "small" || asideAccount(a, f)) && !f.options.length && !f.value;
-    const shownFields = a.fields.filter((f) => !grouped(a, f) && !none(f) && !codexOwnSub(a, f) && !codexRowed(a, f) && !hermesBot(f));
+    const shownFields = a.fields.filter((f) => !grouped(a, f) && !none(f) && !codexOwnSub(a, f) && !codexRowed(a, f) && !hermesBot(f) && !ompAdvisorKey(f));
     const tiers = tierMenu(a);
     if (tiers) shownFields.push(tiers);
     const sorted = shownFields.sort((x, y) => wide(y) - wide(x) || extra(x) - extra(y));
@@ -2284,6 +2284,7 @@ function connectPanel(a, { fields, fieldBtn }) {
     homeAgentPrefRows();
     list.append(...own.map((id) => $("#" + id)));
     if (a.telemetry) list.append(telemetryRow(a));
+    ompAdvisorIn(list, a);
     kv(t("Settings"), list);
     agentCompactIn(list, own, a);
     if (!prefs) {
@@ -4036,6 +4037,7 @@ function agentPrefsButton(a) {
   homeAgentPrefRows();
   const names = agentPrefsOf(a).map((id) => $("#" + id)).filter((r) => !r.hidden).map((r) => r.querySelector(".name").textContent);
   if (a.telemetry) names.push(t("Telemetry"));
+  if (ompAdvisorHas(a)) names.push(t("Advisor"));
   b.append(el("span", "k", t("Settings")), el("span", "v", names.join(" · ")), c);
   b.title = t("{agent} settings", { agent: a.name });
   b.setAttribute("aria-label", b.title);
@@ -4091,6 +4093,8 @@ function tierMenu(a) {
   const level = (e) => e?.value ? effortName(optionFor(e, e.value) || { value: e.value }) : "";
   const custom = tiers.filter((f) => f.value || effortOf(f)?.value);
   const name = (f) => optionFor(f, f.value)?.label || f.value;
+  // omp's advisor on a model, turned off (#6408)
+  const advisorOff = (f) => omp && f.key === "advisor" && f.value && a.fields.find((x) => x.key === "advisor_review")?.value === "off";
   return {
     key: "tiers", label: omp ? "roles" : "tiers", value: "", menu: true, custom: custom.length > 0,
     foot: a.id === "claude-desktop" ? DESKTOP_TIERS_FOOT : "",
@@ -4100,7 +4104,7 @@ function tierMenu(a) {
       // an omp role: one line, its level picked after its model (hongzaitou on X)
       const model = {
         value: f.key, label: t(f.label), icon: optionFor(f, f.value)?.icon || (main && optionFor(main, main.value)?.icon),
-        note: (f.value ? name(f) : unset(f)) + (omp && level(e) ? " · " + level(e) : ""),
+        note: (f.value ? name(f) : unset(f)) + (omp && level(e) ? " · " + level(e) : "") + (advisorOff(f) ? " · " + t("off") : ""),
       };
       return e && !omp ? [model, { value: e.key, label: t(e.label), effortOf: e, note: level(e) || levelUnset(a) }] : [model];
     }),
@@ -12471,7 +12475,7 @@ const subOf = (agent) => {
   if (own && pl && movedSub(agent)) {
     const { name, icon, plans, risk, riskNote, hint, sites, importable } = own;
     // a moved Factory's imported API keys go to its plugin (factory_key.go)
-    return { ...pl, name, icon, plans, risk, riskNote, hint, sites, importable, moved: true };
+    return { ...pl, name, icon, plans, risk, riskNote, hint, sites, importable: importable || pl.importable, moved: true };
   }
   return own || pl;
 };
@@ -12496,7 +12500,7 @@ function pluginMethod(sub, site) {
 // magpie, signs in and carries the requests.
 function pluginSubs() {
   return ((providers || panelAccts)?.plugins || []).map((x) => ({
-    agent: x.id, pid: x.pid, name: x.name, icon: x.icon, plugin: x, own: true, single: !!x.single,
+    agent: x.id, pid: x.pid, name: x.name, icon: x.icon, plugin: x, own: true, single: !!x.single, importable: x.importable,
     get plans() { return t("from the plugin {spec}", { spec: x.spec }); },
   }));
 }
@@ -12533,6 +12537,9 @@ function importSay(agent) {
       checks: t("Each account is kept as the file has it; nothing is asked of Claude."),
     };
   }
+  // a plugin's own import (auth.import): its words say which file (marchen_cc on X)
+  const pl = agent != "antigravity" && pluginSubs().find((x) => x.agent == agent && x.importable)?.plugin, from = pl && (inLang(pl.importFroms, pl.importFrom) || t("Import accounts from a file…"));
+  if (pl) return { from, intro: from, checking: t("Checking the accounts with {vendor}…", { vendor: pl.name }), checks: t("Each account's sign-in is refreshed and its account looked up, as signing in does.") };
   return {
     from: t("Bring in accounts exported from Antigravity Cockpit, Antigravity Manager or CLIProxyAPI"),
     intro: t("Choose or paste an export from Antigravity Cockpit, Antigravity Manager or CLIProxyAPI — JSON, or refresh tokens one a line. Each account is checked with Google before it is added."),
@@ -21269,6 +21276,19 @@ function telemetryRow(a) {
   row.append(who, box);
   return row;
 }
+// omp's advisor (#6408): whether it reviews and when, how long the agent
+// waits on it, and which note calls a finished agent back, as omp's
+// config.yml has them (omp_advisor.go), drawn by ompadvisor.js, imported
+// the first time an omp's settings show. Its model is a role in the roles
+// square
+const OMP_ADVISOR = ["advisor_review", "advisor_wait", "advisor_wake"], ompAdvisorKey = (f) => OMP_ADVISOR.includes(f.key), ompAdvisorHas = (a) => a.fields.some((f) => f.key === OMP_ADVISOR[0]);
+function ompAdvisorIn(list, a) {
+  if (!ompAdvisorHas(a)) return;
+  const at = el("span");
+  at.hidden = true;
+  list.append(at);
+  import("./ompadvisor.js").then(() => at.replaceWith(...ompAdvisorRows(a)), () => {});
+}
 const PREFS_GLYPH = "M2.75 4.75h10.5M2.75 11.25h10.5M5.75 3.25v3M10.25 9.75v3";
 let agentPrefRowEls = null;
 // an agent's own Long conversations, under every agent's (agentcompact.js)
@@ -21294,6 +21314,7 @@ async function openAgentPrefs(a) {
   for (const id of ids) list.append($("#" + id));
   agentCompactIn(list, ids, a);
   if (a.telemetry) list.append(telemetryRow(a));
+  ompAdvisorIn(list, a);
   const bar = el("div", "bar");
   const done = el("button", "primary", t("Done"));
   done.type = "button";
