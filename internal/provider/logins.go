@@ -1051,7 +1051,9 @@ func rememberLogins(force bool) {
 			}
 		}
 		if !ok {
-			if agent == "claude" && claudeLoggedOut(ls) {
+			// half-written as Claude Code rewrites it on Windows: unknown,
+			// not a sign-out (claudeSignInUnsure)
+			if agent == "claude" && !claudeSignInUnsure() && claudeLoggedOut(ls) {
 				changed = true
 			}
 			continue
@@ -1231,6 +1233,12 @@ func loginsNow(agent string) []Login {
 	}
 	var out []Login
 	ls := readLogins()
+	if _, ok := active["claude"]; !ok && claudeSignInUnsure() {
+		// read as Claude Code writes it: the account it held is still its own
+		if u := claudeHeldUser(ls); u != "" {
+			active["claude"] = u
+		}
+	}
 	standIn := ""
 	if _, ok := active["claude"]; !ok {
 		// the one the provider is listed on (claudeStandInAccount), a
@@ -1649,6 +1657,18 @@ func ForgetLogin(agent, user string) error {
 	}
 	if pp, ok := pluginOfAgent(agent); ok {
 		return forgetPluginLogin(pp, user)
+	}
+	if agent == "claude" {
+		// nor while a run is in the account's own directory: magpie's own
+		// (a /usage, a warm-up) ends first, and another magpie process's
+		// is refused past the wait (#4532's run marks) — the removal here
+		// would take the directory from under that run (#3254)
+		mu := claudeDirRun(user)
+		mu.Lock()
+		defer mu.Unlock()
+		if err := waitClaudeRuns(user); err != nil {
+			return err
+		}
 	}
 	switch agent {
 	case "copilot":

@@ -91,6 +91,8 @@ var Vars = []string{
 	"KUN_DATA_DIR",
 	// AstrBot's root, the folder holding its data/ (else ~/.astrbot, the desktop app's)
 	"ASTRBOT_ROOT",
+	// Dim alpha's folder (dima), ~/.dimcode-alpha without it
+	"DIMCODE_HOME",
 	// Mistral Vibe's folder (config.toml, skills, AGENTS.md), ~/.vibe without it
 	"VIBE_HOME",
 	// jcode's folder, ~/.jcode without it
@@ -133,6 +135,9 @@ var Vars = []string{
 	// QwenPaw's working folder (~/.qwenpaw, or a legacy ~/.copaw, without
 	// it) and its secret folder, <working folder>.secret without it
 	"QWENPAW_WORKING_DIR", "QWENPAW_SECRET_DIR",
+	// billion-context's config file, the Library's billion-context tab
+	// changes; $XDG_CONFIG_HOME/billion-context/billion-context.json without it
+	"BILI_CONFIG_FILE",
 	// Cursor's CLI: its config folder (its chats) and its data folder
 	"CURSOR_CONFIG_DIR", "CURSOR_DATA_DIR",
 	// OpenCode and OpenChamber
